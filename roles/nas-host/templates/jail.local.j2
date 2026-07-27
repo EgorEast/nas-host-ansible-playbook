@@ -1,0 +1,56 @@
+# Managed by nas-host ansible role. Правки руками будут перезаписаны.
+
+[DEFAULT]
+# Не банить свои сети — LAN + VPN + loopback
+ignoreip = {{ nas_fail2ban_ignoreip | join(' ') }}
+
+# Дефолтные параметры (можно переопределить в каждом jail)
+bantime = {{ nas_fail2ban_bantime }}
+findtime = {{ nas_fail2ban_findtime }}
+maxretry = {{ nas_fail2ban_maxretry }}
+
+# Action по умолчанию — блокировка через iptables. Для jail'ов,
+# которые защищают Docker-контейнеры (Nextcloud, Synapse) — банит
+# в цепочке DOCKER-USER, которую Docker уважает.
+banaction = iptables-multiport
+banaction_allports = iptables-allports
+
+
+# ─── SSH ──────────────────────────────────────────────────────────────
+# Системный sshd. Не через Docker, поэтому обычная цепочка INPUT.
+[sshd]
+enabled = true
+port = {{ nas_fail2ban_sshd_port }}
+filter = sshd
+backend = systemd
+maxretry = 5
+
+
+# ─── Nextcloud ────────────────────────────────────────────────────────
+# Парсит nas_fail2ban_nextcloud_log — bind-mount из контейнера на хосте.
+# При failed login и bruteforce-attempt ловим IP.
+# Nextcloud сам замедляет ответы через bruteforcesettings, а fail2ban
+# добавляет второй слой — отбрасывает пакеты на iptables-уровне.
+[nextcloud]
+enabled = true
+port = http,https
+filter = nextcloud
+logpath = {{ nas_fail2ban_nextcloud_log }}
+maxretry = 5
+# Cам контейнер за Traefik — блокируем в DOCKER-USER цепочке,
+# иначе iptables INPUT правила не сработают для форвардинга.
+chain = DOCKER-USER
+
+
+# ─── Synapse ──────────────────────────────────────────────────────────
+# Читает journal-логи matrix-synapse.service. Ловит failed login
+# и подозрительные POST на /_matrix/client/*/login.
+# Synapse сам rate-limit'ит, fail2ban — второй слой.
+[synapse]
+enabled = true
+port = http,https
+filter = synapse
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=matrix-synapse.service
+maxretry = 5
+chain = DOCKER-USER

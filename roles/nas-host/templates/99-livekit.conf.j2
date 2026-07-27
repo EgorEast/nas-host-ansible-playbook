@@ -1,0 +1,4 @@
+# Managed by nas-host ansible role. Правки руками будут перезаписаны.
+# UDP-буферы для LiveKit / WebRTC. См. страница 21 в документации.
+net.core.rmem_max={{ nas_udp_buffer_size }}
+net.core.wmem_max={{ nas_udp_buffer_size }}

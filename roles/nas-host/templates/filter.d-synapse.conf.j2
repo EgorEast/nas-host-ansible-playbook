@@ -1,0 +1,20 @@
+# Managed by nas-host ansible role.
+# Synapse filter — читает systemd journal matrix-synapse.service.
+#
+# Ловит неудачные/заблокированные попытки логина по строке access-лога
+# Synapse (стабильный формат синапсового access-логгера):
+#   <ts> - synapse.access.http.<port> - <line> - INFO - <reqid> - <ip> -
+#   <site> - {<user-agent-dict>} "POST /_matrix/client/v3/login HTTP/1.1"
+#   403 <len> "-" "<ua>" <time>
+#
+# ⚠️ Каждая альтернатива failregex ОБЯЗАНА содержать <HOST> — иначе
+# fail2ban-server отказывается грузить фильтр целиком ("No failure-id
+# group") и падает при старте, из-за чего валится вообще весь сервис
+# (не только jail synapse). Строки без IP (например "Denying login")
+# сюда добавлять нельзя — Synapse не пишет туда клиентский IP.
+
+[Definition]
+
+failregex = ^.*synapse\.access\.\S+ - \d+ - INFO - \S+ - <HOST> - \S+ - \{.*\} "(?:POST|GET) /_matrix/client/\S+/login\S* HTTP/[\d.]+" (?:401|403|429) .*$
+
+ignoreregex =

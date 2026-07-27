@@ -1,0 +1,60 @@
+---
+# ─── Docker daemon.json ──────────────────────────────────────────────
+# Фиксирует upstream DNS для контейнеров. Без этого после перезагрузки
+# Docker daemon может стартовать раньше сети → resolv.conf пустой →
+# `NO EXTERNAL NAMESERVERS DEFINED` → федерация Matrix и LiveKit
+# отваливаются с "server misbehaving".
+
+- name: Ensure /etc/docker exists
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    mode: "0755"
+  tags: docker-dns
+
+- name: Configure Docker daemon DNS
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart docker
+  tags: docker-dns
+
+# ─── sysctl для LiveKit ──────────────────────────────────────────────
+# UDP-буферы 16MB — Element Call перестаёт дёргаться при нескольких
+# участниках. Без этого дефолтные ~200KB ограничивают.
+
+- name: Configure sysctl for LiveKit UDP buffers
+  ansible.builtin.template:
+    src: 99-livekit.conf.j2
+    dest: /etc/sysctl.d/99-livekit.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload sysctl
+  tags: sysctl
+
+# ─── /etc/hosts как страховка split-DNS ──────────────────────────────
+# Основной split-DNS на роутере. Здесь дубль — чтобы если роутерный
+# dnsmasq перезапускается, контейнеры/системные утилиты продолжали
+# резолвить собственные домены.
+
+- name: Ensure /etc/hosts contains split-DNS block
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} nas-host: split-DNS"
+    block: |
+      {{ nas_lan_ip }} {{ nas_lightnode_domains | join(' ') }}
+  tags: hosts
+
+# ─── fail2ban ────────────────────────────────────────────────────────
+# Защита от брутфорса SSH и веб-логинов. Отдельные задачи в
+# tasks/fail2ban.yml для чистоты. Тег `fail2ban` — можно точечно.
+
+- name: Include fail2ban tasks
+  ansible.builtin.include_tasks: fail2ban.yml
+  tags:
+    - fail2ban
+    - always

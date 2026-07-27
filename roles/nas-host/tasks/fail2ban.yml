@@ -1,0 +1,53 @@
+---
+# fail2ban для NAS. Три jail:
+#   1. sshd — защита системного SSH (порт задаётся nas_fail2ban_sshd_port)
+#   2. nextcloud — парсит Nextcloud-лог, ловит failed login
+#   3. synapse — парсит journal matrix-synapse, ловит failed login
+#
+# LAN whitelisted (nas_fail2ban_ignoreip) — свои клиенты не банятся никогда.
+# Бан 1 час (не сутки) — на случай если случайно себя забанишь через VPN.
+
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  tags: fail2ban
+
+- name: Configure fail2ban jail.local
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+  tags: fail2ban
+
+- name: Configure fail2ban custom filter for Nextcloud
+  ansible.builtin.template:
+    src: filter.d-nextcloud.conf.j2
+    dest: /etc/fail2ban/filter.d/nextcloud.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+  tags: fail2ban
+
+- name: Configure fail2ban custom filter for Synapse
+  ansible.builtin.template:
+    src: filter.d-synapse.conf.j2
+    dest: /etc/fail2ban/filter.d/synapse.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+  tags: fail2ban
+
+- name: Ensure fail2ban is enabled and running
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started
+  tags: fail2ban

@@ -1,0 +1,27 @@
+---
+# Хостовые настройки NAS. НЕ трогает Docker-контейнеры MASH/MDAD — те
+# ставятся своими плейбуками. Здесь только уровень ОС: Docker daemon,
+# sysctl, /etc/hosts.
+#
+# Что делает:
+#   - /etc/docker/daemon.json — фиксирует upstream DNS для контейнеров
+#     (лечит "server misbehaving" после перезагрузки)
+#   - /etc/sysctl.d/99-livekit.conf — UDP-буферы 16MB для Element Call
+#   - /etc/hosts — блок со split-DNS записями как страховка (основной
+#     split-DNS всё же на роутере)
+#
+# Не делает (умышленно, слишком рискованно автоматизировать):
+#   - /etc/fstab (nofail для /mnt/data) — правь руками, см. страница 22
+#     в документации, там всё описано
+#
+# Использование:
+#   cd ~/playbooks/nas-host
+#   ansible-playbook -i inventory/hosts playbook.yml           # применить всё
+#   ansible-playbook -i inventory/hosts playbook.yml --check   # dry-run
+#   ansible-playbook -i inventory/hosts playbook.yml --tags docker-dns
+
+- name: NAS host configuration
+  hosts: nas_servers
+  gather_facts: true
+  roles:
+    - nas-host
