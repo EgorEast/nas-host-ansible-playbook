@@ -19,6 +19,18 @@
   when: not nas_ups_pwrstatd_bin.stat.exists
   tags: ups
 
+- name: Configure netrc for ntfy notifications
+  ansible.builtin.template:
+    src: netrc.j2
+    dest: "{{ nas_ups_ntfy_netrc_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - nas_ups_ntfy_machine | length > 0
+    - nas_ups_ntfy_password | length > 0
+  tags: ups
+
 - name: Configure pwrstatd.conf
   ansible.builtin.template:
     src: pwrstatd.conf.j2

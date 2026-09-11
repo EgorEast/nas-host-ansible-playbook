@@ -81,9 +81,14 @@ nas_ups_allowed_device_nodes: ""
 
 # ntfy-уведомления о событиях UPS. Пустая строка (по умолчанию) — скрипты
 # используют штатное поведение PowerPanel (сообщение через `wall`).
-# netrc-файл с логином/паролем ntfy создаётся вручную, роль его не пишет
-# (секрет — см. README, раздел «Что НЕ делает»).
 nas_ups_ntfy_url: ""
 nas_ups_ntfy_netrc_file: "/root/.netrc"
 nas_ups_ntfy_powerfail_message: "⚠️ Питание пропало, NAS на UPS-батарее."
 nas_ups_ntfy_lowbatt_message: "🔴 Батарея UPS на критическом уровне, начинаю shutdown."
+
+# Учётка ntfy для netrc-файла (Basic Auth). Пусто по умолчанию — netrc не
+# создаётся. Пароль храни зашифрованным через ansible-vault
+# (`ansible-vault encrypt_string`), см. README.
+nas_ups_ntfy_machine: ""
+nas_ups_ntfy_login: ""
+nas_ups_ntfy_password: ""
