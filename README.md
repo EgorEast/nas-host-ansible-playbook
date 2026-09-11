@@ -28,13 +28,13 @@ Ansible-роль для хостовых настроек NAS. MASH/MDAD ста�
 Пароль для `/root/.netrc` (ntfy-уведомления UPS) хранится в
 `inventory/host_vars/nas/vars.yml` зашифрованным через ansible-vault.
 Соглашение: зашифрованное значение лежит в переменной с префиксом
-`secret_` (`secret_ups_ntfy_password`), а обычная переменная роли
+`secret_` (`secret_nas_ups_ntfy_password`), а обычная переменная роли
 (`nas_ups_ntfy_password`) на неё лишь ссылается:
 
 ```yaml
-nas_ups_ntfy_password: "{{ secret_ups_ntfy_password | default('') }}"
+nas_ups_ntfy_password: "{{ secret_nas_ups_ntfy_password | default('') }}"
 
-secret_ups_ntfy_password: !vault |
+secret_nas_ups_ntfy_password: !vault |
   $ANSIBLE_VAULT;1.1;AES256
   ...
 ```
@@ -46,11 +46,11 @@ secret_ups_ntfy_password: !vault |
 
 ```bash
 read -s -p "ntfy password: " NTFY_PASS; echo
-ansible-vault encrypt_string --ask-vault-pass "$NTFY_PASS" --name secret_ups_ntfy_password
+ansible-vault encrypt_string --ask-vault-pass "$NTFY_PASS" --name secret_nas_ups_ntfy_password
 unset NTFY_PASS
 ```
 
-Вставь результат (`secret_ups_ntfy_password: !vault |...`) в
+Вставь результат (`secret_nas_ups_ntfy_password: !vault |...`) в
 `inventory/host_vars/nas/vars.yml`. Дальше при каждом запуске плейбука,
 пока в переменных есть `!vault`, нужен флаг `--ask-vault-pass` (или
 `--vault-password-file`):
@@ -185,4 +185,4 @@ systemctl is-active pwrstatd
 - `nas_ups_ntfy_netrc_file` — путь к netrc с учёткой ntfy (по умолчанию `/root/.netrc`)
 - `nas_ups_ntfy_powerfail_message` / `nas_ups_ntfy_lowbatt_message` — текст уведомлений
 - `nas_ups_ntfy_machine` / `nas_ups_ntfy_login` — хост и логин для netrc (пусто — netrc не создаётся)
-- `nas_ups_ntfy_password` — пароль для netrc; в host_vars ссылается на `secret_ups_ntfy_password` из ansible-vault (см. «Секреты» выше)
+- `nas_ups_ntfy_password` — пароль для netrc; в host_vars ссылается на `secret_nas_ups_ntfy_password` из ansible-vault (см. «Секреты» выше)
