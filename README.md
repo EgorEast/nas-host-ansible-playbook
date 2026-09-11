@@ -104,6 +104,22 @@ ansible-playbook -i inventory/hosts playbook.yml --tags fail2ban
 ansible-playbook -i inventory/hosts playbook.yml --tags ups
 ```
 
+Те же команды короче через [`just`](https://github.com/casey/just) (см. `justfile`, рецепты как в
+mash-playbook/mdad — `setup-all` там же, что и `install-all`, отдельных стадий
+setup/install в nas-host нет):
+
+```bash
+just check                # dry-run всего
+just install-all          # применить всё (алиас: just setup-all)
+just docker-dns           # точечно, по тегу
+just sysctl
+just hosts
+just fail2ban
+just ups
+# extra_args пробрасываются как есть, например:
+just ups --ask-vault-pass
+```
+
 **⚠️ Осторожно с `docker-dns`**: изменение `daemon.json` триггерит `systemd restart docker`, кладёт все контейнеры на ~1 минуту. Если не хочешь автоматом:
 
 ```bash
