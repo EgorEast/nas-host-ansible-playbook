@@ -26,19 +26,31 @@ Ansible-роль для хостовых настроек NAS. MASH/MDAD ста�
 ## Секреты (ansible-vault)
 
 Пароль для `/root/.netrc` (ntfy-уведомления UPS) хранится в
-`inventory/host_vars/nas/vars.yml` зашифрованным через ansible-vault —
-переменная `nas_ups_ntfy_password`. Приватность самого inventory-репозитория
-не повод класть туда пароль открытым текстом.
+`inventory/host_vars/nas/vars.yml` зашифрованным через ansible-vault.
+Соглашение: зашифрованное значение лежит в переменной с префиксом
+`secret_` (`secret_ups_ntfy_password`), а обычная переменная роли
+(`nas_ups_ntfy_password`) на неё лишь ссылается:
+
+```yaml
+nas_ups_ntfy_password: "{{ secret_ups_ntfy_password | default('') }}"
+
+secret_ups_ntfy_password: !vault |
+  $ANSIBLE_VAULT;1.1;AES256
+  ...
+```
+
+Так по имени переменной сразу видно, что она из vault, а не открытым
+текстом — удобно при grep по инвентарю.
 
 Зашифровать пароль (не появится в истории шелла благодаря `read -s`):
 
 ```bash
 read -s -p "ntfy password: " NTFY_PASS; echo
-ansible-vault encrypt_string --ask-vault-pass "$NTFY_PASS" --name nas_ups_ntfy_password
+ansible-vault encrypt_string --ask-vault-pass "$NTFY_PASS" --name secret_ups_ntfy_password
 unset NTFY_PASS
 ```
 
-Вставь результат (`nas_ups_ntfy_password: !vault |...`) в
+Вставь результат (`secret_ups_ntfy_password: !vault |...`) в
 `inventory/host_vars/nas/vars.yml`. Дальше при каждом запуске плейбука,
 пока в переменных есть `!vault`, нужен флаг `--ask-vault-pass` (или
 `--vault-password-file`):
@@ -173,4 +185,4 @@ systemctl is-active pwrstatd
 - `nas_ups_ntfy_netrc_file` — путь к netrc с учёткой ntfy (по умолчанию `/root/.netrc`)
 - `nas_ups_ntfy_powerfail_message` / `nas_ups_ntfy_lowbatt_message` — текст уведомлений
 - `nas_ups_ntfy_machine` / `nas_ups_ntfy_login` — хост и логин для netrc (пусто — netrc не создаётся)
-- `nas_ups_ntfy_password` — пароль для netrc, храни зашифрованным через ansible-vault (см. «Секреты» выше)
+- `nas_ups_ntfy_password` — пароль для netrc; в host_vars ссылается на `secret_ups_ntfy_password` из ansible-vault (см. «Секреты» выше)
