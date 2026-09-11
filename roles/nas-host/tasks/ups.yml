@@ -1,0 +1,57 @@
+---
+# CyberPower UPS через официальный PowerPanel for Linux (пакет `powerpanel`,
+# демон `pwrstatd`). Пакет ставится вручную с сайта CyberPower (.deb, не в
+# apt-репозиториях) — роль его не устанавливает, только конфигурирует поверх
+# уже установленного.
+
+- name: Check that PowerPanel (pwrstatd) is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/pwrstatd
+  register: nas_ups_pwrstatd_bin
+  tags: ups
+
+- name: Fail if PowerPanel is not installed
+  ansible.builtin.fail:
+    msg: >-
+      /usr/sbin/pwrstatd не найден. Установи PowerPanel for Linux (пакет
+      CyberPower, .deb с их сайта) на хосте вручную перед применением тега
+      `ups`, либо выстави nas_ups_manage: false в host_vars.
+  when: not nas_ups_pwrstatd_bin.stat.exists
+  tags: ups
+
+- name: Configure pwrstatd.conf
+  ansible.builtin.template:
+    src: pwrstatd.conf.j2
+    dest: /etc/pwrstatd.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart pwrstatd
+  tags: ups
+
+- name: Configure power-failure event script
+  ansible.builtin.template:
+    src: pwrstatd-powerfail.sh.j2
+    dest: /etc/pwrstatd-powerfail.sh
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart pwrstatd
+  tags: ups
+
+- name: Configure low-battery event script
+  ansible.builtin.template:
+    src: pwrstatd-lowbatt.sh.j2
+    dest: /etc/pwrstatd-lowbatt.sh
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart pwrstatd
+  tags: ups
+
+- name: Ensure pwrstatd is enabled and running
+  ansible.builtin.systemd:
+    name: pwrstatd
+    enabled: true
+    state: started
+  tags: ups

@@ -20,3 +20,8 @@
   ansible.builtin.systemd:
     name: fail2ban
     state: restarted
+
+- name: restart pwrstatd
+  ansible.builtin.systemd:
+    name: pwrstatd
+    state: restarted

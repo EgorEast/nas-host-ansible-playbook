@@ -58,3 +58,13 @@
   tags:
     - fail2ban
     - always
+
+# ─── CyberPower UPS (PowerPanel / pwrstatd) ───────────────────────────
+# Конфигурирует уже установленный вручную PowerPanel for Linux — пороги
+# отключения, скрипты событий Power Failure / Battery Low. Отдельные
+# задачи в tasks/ups.yml. Тег `ups` — можно точечно.
+
+- name: Include UPS (pwrstatd) tasks
+  ansible.builtin.include_tasks: ups.yml
+  when: nas_ups_manage
+  tags: ups

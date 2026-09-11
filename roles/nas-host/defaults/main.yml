@@ -41,3 +41,49 @@ nas_fail2ban_sshd_port: 22
 
 # Путь к Nextcloud-логу — зависит от установки, задай в host_vars
 nas_fail2ban_nextcloud_log: ""
+
+# ─── CyberPower UPS (PowerPanel / pwrstatd) ───────────────────────────
+# Конфигурирует уже вручную установленный PowerPanel for Linux (пакет
+# `powerpanel`, .deb с сайта CyberPower — не в apt-репозиториях, роль его
+# не ставит). По умолчанию выключено — не у всех хостов есть UPS.
+# Включи в host_vars, если он есть.
+nas_ups_manage: false
+
+# Задержка в секундах перед реакцией на событие Power Failure
+nas_ups_powerfail_delay: 60
+# Запускать shell-скрипт при Power Failure
+nas_ups_powerfail_active: true
+# Разрешить демону выключать систему по одному факту Power Failure
+# (без ожидания порога заряда/времени работы) — обычно нет, ждём lowbatt
+nas_ups_powerfail_shutdown: false
+
+# Порог заряда батареи (%), ниже которого событие Battery Low
+nas_ups_lowbatt_threshold: 20
+# Порог оставшегося времени работы (сек), ниже которого событие Battery Low
+nas_ups_runtime_threshold: 300
+# Запускать shell-скрипт при Battery Low
+nas_ups_lowbatt_active: true
+# Разрешить демону выключать систему при Battery Low
+nas_ups_lowbatt_shutdown: true
+
+# Звуковой сигнал UPS при событиях
+nas_ups_enable_alarm: true
+# Время в секундах на graceful shutdown, после которого UPS отключит питание
+nas_ups_shutdown_sustain: 300
+# Выключать UPS после того, как система выключилась
+nas_ups_turn_ups_off: true
+# Периоды опроса / повторного поиска UPS, сек
+nas_ups_polling_rate: 3
+nas_ups_retry_rate: 10
+# Ограничение device node для связи с UPS (ttyS/ttyUSB/hiddev/libusb),
+# пусто — pwrstatd перебирает все сам
+nas_ups_allowed_device_nodes: ""
+
+# ntfy-уведомления о событиях UPS. Пустая строка (по умолчанию) — скрипты
+# используют штатное поведение PowerPanel (сообщение через `wall`).
+# netrc-файл с логином/паролем ntfy создаётся вручную, роль его не пишет
+# (секрет — см. README, раздел «Что НЕ делает»).
+nas_ups_ntfy_url: ""
+nas_ups_ntfy_netrc_file: "/root/.netrc"
+nas_ups_ntfy_powerfail_message: "⚠️ Питание пропало, NAS на UPS-батарее."
+nas_ups_ntfy_lowbatt_message: "🔴 Батарея UPS на критическом уровне, начинаю shutdown."

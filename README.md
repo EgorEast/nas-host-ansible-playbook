@@ -10,11 +10,31 @@ Ansible-роль для хостовых настроек NAS. MASH/MDAD ста�
 - **`/etc/sysctl.d/99-livekit.conf`** — UDP-буферы 16MB для Element Call.
 - **`/etc/hosts`** — split-DNS страховка. Основной split-DNS на роутере, здесь дубль на случай его перезапуска.
 - **fail2ban** — защита от брутфорса. Три jail: SSH, Nextcloud, Synapse. LAN whitelisted.
+- **CyberPower UPS (pwrstatd)** — пороги отключения (`/etc/pwrstatd.conf`) и
+  скрипты событий Power Failure / Battery Low. Опционально (`nas_ups_manage`),
+  выключено по умолчанию — не у всех хостов есть UPS.
 
 ## Что НЕ делает
 
 - **`/etc/fstab`** — `nofail,x-systemd.device-timeout=30s` для `/mnt/data` правь руками. Автоматизация fstab через ansible слишком рискованна на живой системе.
-- **UPS / pwrstatd, BIOS, SMART тесты** — разово, см. страницу 18.
+- **Установка PowerPanel for Linux** (пакет `powerpanel`, демон `pwrstatd`) —
+  .deb с сайта CyberPower, не в apt-репозиториях. Ставь вручную один раз,
+  роль только конфигурирует уже установленный пакет (тег `ups` упадёт с
+  понятной ошибкой, если бинарник не найден).
+- **`/root/.netrc`** для ntfy-уведомлений с UPS — секрет, создаётся вручную
+  (`machine ntfy.lightnode.ru`, `login`, `password`), роль его не пишет.
+- **BIOS, SMART тесты** — разово, см. страницу 18.
+
+## Бэкапы (postgres_backup, mash + mdad)
+
+Бэкап БД для сервисов mash/mdad настраивается **не здесь**, а в приватных
+`inventory/host_vars/*/vars.yml` самих плейбуков (`mash-playbook`,
+`matrix-docker-ansible-deploy`) — роль `postgres_backup`
+(docker-postgres-backup-local, только Postgres, без файлов сервисов) там
+уже включена и пишет в `/mnt/data/backups/{mash,matrix}-postgres` на
+RAID1. Расписание — каждый день в 04:00, retention 7 ежедневных + 4
+недельных + 6 месячных дампов. Роль сама создаёт нужные каталоги с
+правильными правами — ручной подготовки на хосте не требуется.
 
 ## Использование
 
@@ -47,6 +67,7 @@ ansible-playbook -i inventory/hosts playbook.yml --tags docker-dns
 ansible-playbook -i inventory/hosts playbook.yml --tags sysctl
 ansible-playbook -i inventory/hosts playbook.yml --tags hosts
 ansible-playbook -i inventory/hosts playbook.yml --tags fail2ban
+ansible-playbook -i inventory/hosts playbook.yml --tags ups
 ```
 
 **⚠️ Осторожно с `docker-dns`**: изменение `daemon.json` триггерит `systemd restart docker`, кладёт все контейнеры на ~1 минуту. Если не хочешь автоматом:
@@ -82,6 +103,12 @@ fail2ban-client status nextcloud
 
 # Разбанить IP (если случайно себя):
 fail2ban-client set sshd unbanip 1.2.3.4
+
+# UPS:
+pwrstat -status
+# должно показать State: Normal (или On Battery при отключении питания)
+
+systemctl is-active pwrstatd
 ```
 
 ## Переменные
@@ -113,3 +140,13 @@ fail2ban-client set sshd unbanip 1.2.3.4
 - `nas_fail2ban_maxretry` — порог по умолчанию
 - `nas_fail2ban_sshd_port` — порт системного SSH (в дефолтах `22`)
 - `nas_fail2ban_nextcloud_log` — путь к `nextcloud.log` на хосте
+- `nas_ups_manage` — включить конфигурирование UPS (по умолчанию `false`)
+- `nas_ups_powerfail_delay` — задержка перед реакцией на Power Failure, сек
+- `nas_ups_powerfail_shutdown` — выключать систему по одному факту Power Failure (без ожидания порога заряда)
+- `nas_ups_lowbatt_threshold` — порог заряда батареи (%) для Battery Low
+- `nas_ups_runtime_threshold` — порог оставшегося времени работы (сек) для Battery Low
+- `nas_ups_lowbatt_shutdown` — выключать систему при Battery Low
+- `nas_ups_shutdown_sustain` — сколько сек ждать graceful shutdown, прежде чем UPS отключит питание
+- `nas_ups_ntfy_url` — URL ntfy-топика для уведомлений о событиях UPS (пусто — уведомление через `wall`)
+- `nas_ups_ntfy_netrc_file` — путь к netrc с учёткой ntfy (файл создаётся вручную, см. «Что НЕ делает»)
+- `nas_ups_ntfy_powerfail_message` / `nas_ups_ntfy_lowbatt_message` — текст уведомлений
