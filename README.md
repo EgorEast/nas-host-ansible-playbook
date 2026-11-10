@@ -9,6 +9,12 @@ Ansible-роль для хостовых настроек NAS. MASH/MDAD ста�
   Без этого после ребута контейнеры получают пустой resolv.conf и твои домены перестают резолвиться → федерация, LiveKit, push ломаются с `server misbehaving`.
 - **`/etc/sysctl.d/99-livekit.conf`** — UDP-буферы 16MB для Element Call.
 - **`/etc/hosts`** — split-DNS страховка. Основной split-DNS на роутере, здесь дубль на случай его перезапуска.
+- **Fallback DNS** — `/etc/resolv.conf.tail` с `1.1.1.1`/`9.9.9.9`
+  (`options timeout:2 attempts:2`) плюс тот же блок в живом `/etc/resolv.conf`:
+  dhcpcd оставляет единственный nameserver — роутер, и транзиентный сбой его
+  DNS валит резолв в CI. Раннер-контейнер читает resolv.conf при старте, поэтому
+  плейбук перезапускает его только когда API подтверждает отсутствие активных
+  задач; иначе печатает ручную команду `docker restart mash-forgejo-runner`.
 - **fail2ban** — защита от брутфорса. Три jail: SSH, Nextcloud, Synapse. LAN whitelisted.
 - **CyberPower UPS (pwrstatd)** — пороги отключения (`/etc/pwrstatd.conf`) и
   скрипты событий Power Failure / Battery Low. Опционально (`nas_ups_manage`),
@@ -100,6 +106,7 @@ ansible-playbook -i inventory/hosts playbook.yml
 ansible-playbook -i inventory/hosts playbook.yml --tags docker-dns
 ansible-playbook -i inventory/hosts playbook.yml --tags sysctl
 ansible-playbook -i inventory/hosts playbook.yml --tags hosts
+ansible-playbook -i inventory/hosts playbook.yml --tags dns-fallback
 ansible-playbook -i inventory/hosts playbook.yml --tags fail2ban
 ansible-playbook -i inventory/hosts playbook.yml --tags ups
 ```
@@ -114,6 +121,7 @@ just install-all          # применить всё (алиас: just setup-al
 just docker-dns           # точечно, по тегу
 just sysctl
 just hosts
+just dns-fallback
 just fail2ban
 just ups
 # extra_args пробрасываются как есть, например:

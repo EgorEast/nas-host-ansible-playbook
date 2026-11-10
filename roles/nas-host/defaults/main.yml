@@ -24,6 +24,16 @@ nas_udp_buffer_size: 16777216
 nas_lan_ip: ""
 nas_lightnode_domains: []
 
+# ─── Fallback DNS для хоста/раннера ─────────────────────────────────
+# dhcpcd генерирует /etc/resolv.conf с одним nameserver (роутер);
+# fallback-серверы кладутся в /etc/resolv.conf.tail, поэтому переживают
+# перегенерацию. Раннер-контейнер читает resolv.conf при старте: после
+# изменения DNS его нужно перезапустить. Плейбук делает это ТОЛЬКО если
+# API показывает отсутствие running/waiting/queued задач.
+nas_runner_container: mash-forgejo-runner
+nas_runner_tasks_api: >-
+  https://git.lightnode.ru/api/v1/repos/Slovo_Propovedi/slovo-propovedi-mobile/actions/tasks
+
 # ─── fail2ban ────────────────────────────────────────────────────────
 # Whitelist сетей и IP — не банятся никогда. LAN-подсеть добавь в
 # host_vars, иначе свои клиенты не защищены от случайного самобана.

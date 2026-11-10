@@ -2,7 +2,7 @@
 default:
     @{{ just_executable() }} --list --justfile {{ justfile() }}
 
-# Applies all host configuration (Docker DNS, sysctl, /etc/hosts, fail2ban, UPS)
+# Applies all host configuration (Docker DNS, sysctl, /etc/hosts, fallback DNS, fail2ban, UPS)
 install-all *extra_args:
     ansible-playbook -i inventory/hosts playbook.yml {{ extra_args }}
 
@@ -25,6 +25,9 @@ sysctl *extra_args: (run-tags "sysctl" extra_args)
 
 # Configures the /etc/hosts split-DNS safety net
 hosts *extra_args: (run-tags "hosts" extra_args)
+
+# Configures fallback DNS resolvers (resolv.conf.tail + live file; restarts the runner only if idle)
+dns-fallback *extra_args: (run-tags "dns-fallback" extra_args)
 
 # Configures fail2ban jails (sshd, nextcloud, synapse)
 fail2ban *extra_args: (run-tags "fail2ban" extra_args)

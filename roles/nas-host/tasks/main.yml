@@ -49,6 +49,70 @@
       {{ nas_lan_ip }} {{ nas_lightnode_domains | join(' ') }}
   tags: hosts
 
+# ─── Fallback DNS (resolv.conf.tail + живой файл) ────────────────────
+# /etc/resolv.conf здесь генерирует dhcpcd из DHCP и оставляет ОДИН
+# nameserver — роутер. Транзиентный сбой роутерного DNS валит резолв
+# api.github.com в CI. Fallback-серверы добавляем через
+# /etc/resolv.conf.tail (dhcpcd дописывает его при каждой перегенерации)
+# и сразу в живой файл, чтобы не ждать продления лизы. Блок в живом
+# файле dhcpcd перезапишет — tail делает его постоянным.
+# Раннер-контейнер читает resolv.conf при старте, поэтому его
+# перезапускаем только когда API доказывает отсутствие активных задач.
+
+- name: Configure DNS fallback for dhcpcd-generated resolv.conf
+  ansible.builtin.copy:
+    content: |
+      nameserver 1.1.1.1
+      nameserver 9.9.9.9
+      options timeout:2 attempts:2
+    dest: /etc/resolv.conf.tail
+    owner: root
+    group: root
+    mode: "0644"
+  tags: dns-fallback
+
+- name: Add DNS fallback to the live /etc/resolv.conf
+  ansible.builtin.blockinfile:
+    path: /etc/resolv.conf
+    marker: "# {mark} dns-fallback"
+    insertafter: EOF
+    block: |
+      nameserver 1.1.1.1
+      nameserver 9.9.9.9
+      options timeout:2 attempts:2
+  tags: dns-fallback
+
+- name: Check whether the Forgejo runner is idle
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsS --max-time 10 "{{ nas_runner_tasks_api }}" \
+      | jq -e '[.workflow_runs[]?
+        | select(.status == "running"
+                 or .status == "waiting"
+                 or .status == "queued")]
+        | length == 0'
+  args:
+    executable: /bin/bash
+  register: nas_runner_idle
+  changed_when: false
+  failed_when: false
+  tags: dns-fallback
+
+- name: Restart the Forgejo runner container to pick up the new resolver
+  ansible.builtin.command: docker restart {{ nas_runner_container }}
+  when: nas_runner_idle.rc == 0
+  changed_when: true
+  tags: dns-fallback
+
+- name: Report skipped runner restart
+  ansible.builtin.debug:
+    msg: >-
+      Runner restart skipped: could not prove the runner is idle.
+      Run manually when no CI jobs are active:
+      docker restart {{ nas_runner_container }}
+  when: nas_runner_idle.rc != 0
+  tags: dns-fallback
+
 # ─── fail2ban ────────────────────────────────────────────────────────
 # Защита от брутфорса SSH и веб-логинов. Отдельные задачи в
 # tasks/fail2ban.yml для чистоты. Тег `fail2ban` — можно точечно.
