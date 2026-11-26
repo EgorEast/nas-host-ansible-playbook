@@ -116,6 +116,12 @@ nas_socks5_tunnel_vps_host: ""
 nas_socks5_tunnel_vps_user: "root"
 nas_socks5_tunnel_vps_ssh_port: 22
 
+# Адрес, по которому управляющая машина авторизует ключ туннеля
+# (delegate_to: localhost). По умолчанию — тот же VPS, но можно задать
+# IP напрямую: имя vps_host может существовать только в split-DNS
+# роутера (dnsmasq), а у управляющей машины свои резолверы.
+nas_socks5_tunnel_authorize_host: "{{ nas_socks5_tunnel_vps_host }}"
+
 # Локальный адрес и порт туннеля. 172.21.0.1 — Docker bridge gateway,
 # поэтому контейнеры достают туннель напрямую.
 nas_socks5_tunnel_local_address: "172.21.0.1"

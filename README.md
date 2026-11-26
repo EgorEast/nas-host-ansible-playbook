@@ -160,6 +160,7 @@ whatsapp). Мосты в matrix-docker-ansible-deploy ходят в
 ```yaml
 nas_socks5_tunnel_manage: true
 nas_socks5_tunnel_vps_host: "proxy.lightnode.ru"   # имя из split-DNS роутера, указывает на VPS с прокси
+nas_socks5_tunnel_authorize_host: "203.0.113.10"   # IP VPS для авторизации ключа с управляющей машины (опционально)
 ```
 
 Потом `just socks5-tunnel --ask-vault-pass`. При первом запуске роль:
@@ -184,6 +185,13 @@ nas_socks5_tunnel_vps_host: "proxy.lightnode.ru"   # имя из split-DNS ро�
 машины на VPS под своим админским ключом (`ssh root@<vps>` работает
 без пароля) — иначе шаг упадёт с `Permission denied`.
 
+**⚠️ Управляющая машина резолвит VPS своими DNS**, а не split-DNS
+роутера: если `nas_socks5_tunnel_vps_host` — имя, известное только
+роутеру (dnsmasq), шаг авторизации у управляющей машины упадёт с
+`Could not resolve hostname`. Задай `nas_socks5_tunnel_authorize_host`
+(реальный IP VPS) — авторизация идёт по нему, а туннель с NAS продолжает
+ходить по имени `nas_socks5_tunnel_vps_host`.
+
 ### Смена прокси-сервера
 
 `proxy.lightnode.ru` — единое имя всей прокси-инфраструктуры: ОДНА
@@ -192,7 +200,8 @@ whatsapp). Туннель держит ОДНО ssh-соединение и са
 к новому серверу — смена сервера это:
 
 1. правь запись `proxy.lightnode.ru` в OpenWrt Hosts (dnsmasq) на IP
-   нового сервера;
+   нового сервера (и `nas_socks5_tunnel_authorize_host` в host_vars,
+   если авторизация идёт по IP);
 2. на новом сервере: поставь SOCKS5 (Amnezia) с теми же кредами и портом
    44135 и добавь в `/root/.ssh/authorized_keys` строку
    `restrict,port-forwarding <содержимое /root/.ssh/id_ed25519_socks5_tunnel.pub с NAS>`;
@@ -293,6 +302,7 @@ systemctl status matrix-socks5-tunnel
 - `nas_ups_ntfy_password` — пароль для netrc; в host_vars ссылается на `secret_nas_ups_ntfy_password` из ansible-vault (см. «Секреты» выше)
 - `nas_socks5_tunnel_manage` — включить туннель к SOCKS5-прокси на VPS (по умолчанию `false`)
 - `nas_socks5_tunnel_vps_host` — VPS с прокси и SSH (имя из split-DNS роутера или IP; пусто — тег упадёт с понятной ошибкой)
+- `nas_socks5_tunnel_authorize_host` — адрес для авторизации ключа с управляющей машины (по умолчанию `nas_socks5_tunnel_vps_host`; задай IP, если имя резолвится только роутером)
 - `nas_socks5_tunnel_vps_user` / `nas_socks5_tunnel_vps_ssh_port` — SSH-учётка и порт на VPS (`root`, `22`)
 - `nas_socks5_tunnel_local_address` — локальный адрес слушателя (`172.21.0.1` — Docker bridge gateway)
 - `nas_socks5_tunnel_local_port` — локальный порт слушателя (`44135`)

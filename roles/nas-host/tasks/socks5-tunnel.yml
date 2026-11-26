@@ -53,10 +53,12 @@
 # управляющей машине — поэтому become: false (умышленно НЕ от root).
 # Идемпотентно через `grep -qF`; BatchMode=yes валит задачу с ошибкой,
 # если ключа нет, вместо зависания на запрос пароля.
+# Ходим по nas_socks5_tunnel_authorize_host (по умолчанию = vps_host):
+# имя из split-DNS роутера у управляющей машины может не резолвиться.
 - name: Ensure the tunnel key is authorized on the VPS (restrict,port-forwarding)
   ansible.builtin.shell:
     cmd: |
-      ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p {{ nas_socks5_tunnel_vps_ssh_port }} {{ nas_socks5_tunnel_vps_user }}@{{ nas_socks5_tunnel_vps_host }} 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF "{{ nas_socks5_tunnel_public_key }}" ~/.ssh/authorized_keys 2>/dev/null || echo "restrict,port-forwarding {{ nas_socks5_tunnel_public_key }}" >> ~/.ssh/authorized_keys'
+      ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p {{ nas_socks5_tunnel_vps_ssh_port }} {{ nas_socks5_tunnel_vps_user }}@{{ nas_socks5_tunnel_authorize_host }} 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF "{{ nas_socks5_tunnel_public_key }}" ~/.ssh/authorized_keys 2>/dev/null || echo "restrict,port-forwarding {{ nas_socks5_tunnel_public_key }}" >> ~/.ssh/authorized_keys'
     executable: /bin/bash
   delegate_to: localhost
   become: false
