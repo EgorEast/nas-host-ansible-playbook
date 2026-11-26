@@ -1,0 +1,166 @@
+---
+# Самолечащийся SSH-туннель к SOCKS5-прокси на VPS. ОДНО соединение
+# NAS<->VPS (keepalive + Restart=always) вместо многих прямых: edge
+# хостера режет/молча роняет долгоживущие прямые соединения, а туннель
+# при обрыве сам перезапускается. Слушает на Docker bridge gateway
+# (172.21.0.1) — контейнеры (мосты Matrix) ходят в прокси напрямую.
+# Потребители — bridge'и в matrix playbook, systemd RequiredBy туннеля.
+
+- name: Fail if the VPS host is not configured
+  ansible.builtin.fail:
+    msg: >-
+      nas_socks5_tunnel_vps_host пуст. Задай адрес VPS в
+      inventory/host_vars/nas/vars.yml (nas_socks5_tunnel_manage: true +
+      nas_socks5_tunnel_vps_host: "<хост или IP>"), либо выключи фичу
+      (nas_socks5_tunnel_manage: false).
+  when: nas_socks5_tunnel_vps_host | length == 0
+  tags: socks5-tunnel
+
+# SSH-ключ туннеля лежит на NAS. Каталог на свежей машине может
+# отсутствовать — создаём.
+- name: Ensure the directory holding the tunnel key exists
+  ansible.builtin.file:
+    path: "{{ nas_socks5_tunnel_key_path | dirname }}"
+    state: directory
+    mode: "0700"
+  tags: socks5-tunnel
+
+# Идемпотентно через `creates`: существующий ключ (например, оставшийся
+# от ручной настройки) переиспользуется как есть, и авторизованный на
+# VPS ключ не меняется.
+- name: Ensure the tunnel SSH key exists (generated on first run)
+  ansible.builtin.command:
+    cmd: "ssh-keygen -t ed25519 -f {{ nas_socks5_tunnel_key_path }} -N '' -C socks5-tunnel@nas"
+  args:
+    creates: "{{ nas_socks5_tunnel_key_path }}"
+  tags: socks5-tunnel
+
+- name: Read the tunnel public key
+  ansible.builtin.slurp:
+    src: "{{ nas_socks5_tunnel_key_path }}.pub"
+  register: nas_socks5_tunnel_public_key_slurp
+  tags: socks5-tunnel
+
+- name: Set nas_socks5_tunnel_public_key
+  ansible.builtin.set_fact:
+    nas_socks5_tunnel_public_key: "{{ (nas_socks5_tunnel_public_key_slurp['content'] | b64decode) | trim }}"
+  tags: socks5-tunnel
+
+# Выполняется на управляющей машине (delegate_to: localhost), а не на NAS.
+# Сам ключ туннеля ограничен опциями restrict,port-forwarding и выполнить
+# команду не может; root на NAS рабочего ключа к VPS тоже не имеет.
+# Рабочий админский ключ к VPS держит юзер, запускающий ansible на
+# управляющей машине — поэтому become: false (умышленно НЕ от root).
+# Идемпотентно через `grep -qF`; BatchMode=yes валит задачу с ошибкой,
+# если ключа нет, вместо зависания на запрос пароля.
+- name: Ensure the tunnel key is authorized on the VPS (restrict,port-forwarding)
+  ansible.builtin.shell:
+    cmd: |
+      ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p {{ nas_socks5_tunnel_vps_ssh_port }} {{ nas_socks5_tunnel_vps_user }}@{{ nas_socks5_tunnel_vps_host }} 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qF "{{ nas_socks5_tunnel_public_key }}" ~/.ssh/authorized_keys 2>/dev/null || echo "restrict,port-forwarding {{ nas_socks5_tunnel_public_key }}" >> ~/.ssh/authorized_keys'
+    executable: /bin/bash
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+  tags: socks5-tunnel
+
+# Docker-интеграция ufw (если есть) занимается только портами
+# контейнеров, поэтому хостовый файрвол явно пускает Docker-контейнеры
+# к локальному слушателю туннеля. Если ufw не установлен — пропускаем.
+- name: Check whether ufw is installed
+  ansible.builtin.command:
+    cmd: command -v ufw
+  register: nas_socks5_tunnel_ufw_check
+  failed_when: false
+  changed_when: false
+  tags: socks5-tunnel
+
+- name: Check the existing ufw rules
+  ansible.builtin.command:
+    cmd: ufw status
+  register: nas_socks5_tunnel_ufw_status
+  changed_when: false
+  when: nas_socks5_tunnel_ufw_check.rc == 0
+  tags: socks5-tunnel
+
+- name: Ensure ufw allows Docker containers to reach the tunnel listener
+  ansible.builtin.command:
+    cmd: "ufw allow from 172.21.0.0/16 to any port {{ nas_socks5_tunnel_local_port }} proto tcp comment 'matrix-socks5-tunnel'"
+  when:
+    - nas_socks5_tunnel_ufw_check.rc == 0
+    - (nas_socks5_tunnel_local_port | string) not in nas_socks5_tunnel_ufw_status.stdout
+  changed_when: true
+  tags: socks5-tunnel
+
+# Ручной юнит (настроенный до появления роли) заменяется плейбучным:
+# останавливаем, выключаем, удаляем файл.
+- name: Check for the legacy manual tunnel unit
+  ansible.builtin.stat:
+    path: "{{ nas_socks5_tunnel_legacy_unit_path }}"
+  register: nas_socks5_tunnel_legacy_unit_stat
+  tags: socks5-tunnel
+
+- name: Ensure the legacy manual tunnel service is stopped and disabled
+  ansible.builtin.systemd:
+    name: "{{ nas_socks5_tunnel_legacy_unit_path | basename | splitext | first }}"
+    state: stopped
+    enabled: false
+  when: nas_socks5_tunnel_legacy_unit_stat.stat.exists
+  tags: socks5-tunnel
+
+- name: Ensure the legacy manual tunnel unit file is removed
+  ansible.builtin.file:
+    path: "{{ nas_socks5_tunnel_legacy_unit_path }}"
+    state: absent
+  when: nas_socks5_tunnel_legacy_unit_stat.stat.exists
+  notify: daemon reload
+  tags: socks5-tunnel
+
+- name: Ensure the tunnel systemd unit is installed
+  ansible.builtin.template:
+    src: matrix-socks5-tunnel.service.j2
+    dest: /etc/systemd/system/{{ nas_socks5_tunnel_unit_name }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: daemon reload
+  register: nas_socks5_tunnel_unit_result
+  tags: socks5-tunnel
+
+# Handler сработает в конце плея, но рестарт (см. ниже) должен идти уже
+# с новой версией юнита — флашим сразу.
+- name: Flush the daemon reload handler before touching the service
+  ansible.builtin.meta: flush_handlers
+  tags: socks5-tunnel
+
+- name: Ensure the tunnel service is enabled and (re)started
+  ansible.builtin.systemd:
+    name: "{{ nas_socks5_tunnel_unit_name }}"
+    state: "{{ 'restarted' if nas_socks5_tunnel_unit_result.changed else 'started' }}"
+    enabled: true
+  tags: socks5-tunnel
+
+# Туннель поднимается не мгновенно (SSH-хендшейк до VPS) — ждём с
+# ретраями, чтобы падение было понятным, а не гонкой на старте.
+# В check mode команды не исполняются — проверки пропускаем.
+- name: Check that the tunnel service is active
+  ansible.builtin.command: # noqa command-instead-of-module - needs retries/until for the startup race
+    cmd: "systemctl is-active {{ nas_socks5_tunnel_unit_name }}"
+  register: nas_socks5_tunnel_service_active
+  until: nas_socks5_tunnel_service_active.stdout == 'active'
+  retries: 5
+  delay: 3
+  changed_when: false
+  when: not ansible_check_mode
+  tags: socks5-tunnel
+
+- name: Check that the tunnel is listening (listener on the local address)
+  ansible.builtin.command:
+    cmd: "ss -tlnp sport = :{{ nas_socks5_tunnel_local_port }}"
+  register: nas_socks5_tunnel_listener
+  until: "(nas_socks5_tunnel_local_address ~ ':' ~ (nas_socks5_tunnel_local_port | string)) in nas_socks5_tunnel_listener.stdout"
+  retries: 5
+  delay: 3
+  changed_when: false
+  when: not ansible_check_mode
+  tags: socks5-tunnel

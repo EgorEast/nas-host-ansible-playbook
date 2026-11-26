@@ -102,3 +102,37 @@ nas_ups_ntfy_lowbatt_message: "🔴 Батарея UPS на критическо
 nas_ups_ntfy_machine: ""
 nas_ups_ntfy_login: ""
 nas_ups_ntfy_password: ""
+
+# ─── SOCKS5 tunnel ───────────────────────────────────────────────────
+# Самолечащийся SSH-туннель к SOCKS5-прокси на VPS: ОДНО соединение
+# (keepalive + Restart=always), слушает на Docker-bridge gateway, чтобы
+# контейнеры (мосты Matrix) ходили в прокси напрямую. По умолчанию
+# выключено — включай в host_vars (`nas_socks5_tunnel_manage: true`).
+nas_socks5_tunnel_manage: false
+
+# VPS, на котором живёт SOCKS5-прокси и доступен SSH. ОБЯЗАТЕЛЬНО задай
+# в host_vars (адрес пустой — роль упадёт с понятной ошибкой).
+nas_socks5_tunnel_vps_host: ""
+nas_socks5_tunnel_vps_user: "root"
+nas_socks5_tunnel_vps_ssh_port: 22
+
+# Локальный адрес и порт туннеля. 172.21.0.1 — Docker bridge gateway,
+# поэтому контейнеры достают туннель напрямую.
+nas_socks5_tunnel_local_address: "172.21.0.1"
+nas_socks5_tunnel_local_port: 44135
+
+# SOCKS5-эндпоинт (на VPS), куда туннель форвардит.
+nas_socks5_tunnel_target: "127.0.0.1:44135"
+
+# SSH-ключ туннеля. Генерируется при первом запуске, его публичная часть
+# добавляется в authorized_keys на VPS с опциями restrict,port-forwarding
+# (ключ годится только для форвардинга портов, не для команд).
+nas_socks5_tunnel_key_path: "/root/.ssh/id_ed25519_socks5_tunnel"
+
+# Имя systemd-юнита туннеля. Потребители (мосты в matrix playbook)
+# ссылаются на него через systemd_required_services_list_custom.
+nas_socks5_tunnel_unit_name: "matrix-socks5-tunnel.service"
+
+# Ручной юнит туннеля, если был настроен руками, — при первом запуске
+# останавливается, выключается и удаляется (заменяется ролью).
+nas_socks5_tunnel_legacy_unit_path: "/etc/systemd/system/amnezia-socks5-tunnel.service"

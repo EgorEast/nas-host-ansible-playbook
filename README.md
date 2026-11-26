@@ -19,6 +19,13 @@ Ansible-роль для хостовых настроек NAS. MASH/MDAD ста�
 - **CyberPower UPS (pwrstatd)** — пороги отключения (`/etc/pwrstatd.conf`) и
   скрипты событий Power Failure / Battery Low. Опционально (`nas_ups_manage`),
   выключено по умолчанию — не у всех хостов есть UPS.
+- **SOCKS5 tunnel** (`matrix-socks5-tunnel.service`) — самолечащийся
+  SSH-туннель к SOCKS5-прокси на VPS. ОДНО соединение NAS<->VPS
+  (keepalive + `Restart=always` — при обрыве туннель сам перезапускается
+  вместо тихого зависания), слушает `172.21.0.1:44135` (Docker bridge
+  gateway), так что контейнеры ходят в прокси напрямую. Потребители —
+  мосты Matrix (telegram/whatsapp) в mdad. Опционально
+  (`nas_socks5_tunnel_manage`), выключено по умолчанию. Тег `socks5-tunnel`.
 
 ## Что НЕ делает
 
@@ -109,6 +116,7 @@ ansible-playbook -i inventory/hosts playbook.yml --tags hosts
 ansible-playbook -i inventory/hosts playbook.yml --tags dns-fallback
 ansible-playbook -i inventory/hosts playbook.yml --tags fail2ban
 ansible-playbook -i inventory/hosts playbook.yml --tags ups
+ansible-playbook -i inventory/hosts playbook.yml --tags socks5-tunnel
 ```
 
 Те же команды короче через [`just`](https://github.com/casey/just) (см. `justfile`, рецепты как в
@@ -124,8 +132,10 @@ just hosts
 just dns-fallback
 just fail2ban
 just ups
+just socks5-tunnel
 # extra_args пробрасываются как есть, например:
 just ups --ask-vault-pass
+just socks5-tunnel --ask-vault-pass
 ```
 
 **⚠️ Осторожно с `docker-dns`**: изменение `daemon.json` триггерит `systemd restart docker`, кладёт все контейнеры на ~1 минуту. Если не хочешь автоматом:
@@ -135,6 +145,70 @@ just ups --ask-vault-pass
 ansible-playbook -i inventory/hosts playbook.yml --tags docker-dns --skip-tags never
 ssh root@nas 'systemctl restart docker'   # в удобное время
 ```
+
+## SOCKS5 tunnel
+
+Единый SSH-туннель к SOCKS5-прокси на VPS для мостов Matrix (telegram,
+whatsapp). Мосты в matrix-docker-ansible-deploy ходят в
+`socks5://...@172.21.0.1:44135` и привязаны к юниту через systemd
+(`matrix_bridge_mautrix_*_systemd_required_services_list_custom:
+[matrix-socks5-tunnel.service]` в host_vars matrix-плейбука) — туннель
+поднимается раньше мостов и уносит их с собой при рестарте.
+
+Включение — в `inventory/host_vars/nas/vars.yml`:
+
+```yaml
+nas_socks5_tunnel_manage: true
+nas_socks5_tunnel_vps_host: "proxy.lightnode.ru"   # имя из split-DNS роутера, указывает на VPS с прокси
+```
+
+Потом `just socks5-tunnel --ask-vault-pass`. При первом запуске роль:
+
+- генерирует Ed25519-ключ `nas_socks5_tunnel_key_path`
+  (`/root/.ssh/id_ed25519_socks5_tunnel`), если его ещё нет; существующий
+  (например, от ручной настройки) переиспользуется как есть
+- читает публичную часть ключа и добавляет её на VPS в
+  `~/.ssh/authorized_keys` с опциями `restrict,port-forwarding`, если
+  её там ещё нет — такой ключ годится только на форвардинг портов,
+  команды по нему выполнить нельзя
+- добавляет правило `ufw allow from 172.21.0.0/16 to any port 44135 proto tcp`
+  — Docker-контейнеры пускают к слушателю туннеля (если ufw установлен)
+- останавливает, выключает и удаляет ручной юнит
+  `amnezia-socks5-tunnel.service` (если был), заменяя его рольным
+  `matrix-socks5-tunnel.service`
+
+**⚠️ Авторизация ключа выполняется на управляющей машине** (машина, с
+которой запускается ansible), а не на NAS: ключ туннеля ограничен
+`restrict,port-forwarding` и выполнить команду не может, а root на NAS
+рабочего ключа к VPS не имеет. Нужен обычный SSH-доступ с управляющей
+машины на VPS под своим админским ключом (`ssh root@<vps>` работает
+без пароля) — иначе шаг упадёт с `Permission denied`.
+
+### Смена прокси-сервера
+
+`proxy.lightnode.ru` — единое имя всей прокси-инфраструктуры: ОДНА
+запись в OpenWrt Hosts обслуживает туннель для ОБЕИХ мостов (telegram и
+whatsapp). Туннель держит ОДНО ssh-соединение и сам не переподключается
+к новому серверу — смена сервера это:
+
+1. правь запись `proxy.lightnode.ru` в OpenWrt Hosts (dnsmasq) на IP
+   нового сервера;
+2. на новом сервере: поставь SOCKS5 (Amnezia) с теми же кредами и портом
+   44135 и добавь в `/root/.ssh/authorized_keys` строку
+   `restrict,port-forwarding <содержимое /root/.ssh/id_ed25519_socks5_tunnel.pub с NAS>`;
+3. `systemctl restart matrix-socks5-tunnel`.
+
+Запись `tgp.lightnode.ru` устарела — можно удалить: telegram-мост больше
+не использует mtproxy (MTProxy-контейнер остаётся только как прокси для
+телефона, телефон ссылается на него tg://proxy-ссылкой по сырому IP —
+DNS ему не нужен).
+
+Свойства схемы: ssh матчит known_hosts по имени хоста, так что смена IP
+не даёт mismatch'а; первая встреча с новым сервером закрывается
+`StrictHostKeyChecking=accept-new`; а если запись в Hosts неправильная
+или временно битая — получишь чистую ошибку авторизации/соединения в
+`journalctl -u matrix-socks5-tunnel` (лечится правкой записи), а не
+локап NAS.
 
 ## Проверки после применения
 
@@ -167,6 +241,13 @@ pwrstat -status
 # должно показать State: Normal (или On Battery при отключении питания)
 
 systemctl is-active pwrstatd
+
+# SOCKS5 tunnel:
+ss -tlnp sport = :44135
+# должен быть LISTEN на 172.21.0.1:44135
+
+systemctl status matrix-socks5-tunnel
+# должно быть active (running); при рестартах смотри journalctl -u matrix-socks5-tunnel
 ```
 
 ## Переменные
@@ -210,3 +291,12 @@ systemctl is-active pwrstatd
 - `nas_ups_ntfy_powerfail_message` / `nas_ups_ntfy_lowbatt_message` — текст уведомлений
 - `nas_ups_ntfy_machine` / `nas_ups_ntfy_login` — хост и логин для netrc (пусто — netrc не создаётся)
 - `nas_ups_ntfy_password` — пароль для netrc; в host_vars ссылается на `secret_nas_ups_ntfy_password` из ansible-vault (см. «Секреты» выше)
+- `nas_socks5_tunnel_manage` — включить туннель к SOCKS5-прокси на VPS (по умолчанию `false`)
+- `nas_socks5_tunnel_vps_host` — VPS с прокси и SSH (имя из split-DNS роутера или IP; пусто — тег упадёт с понятной ошибкой)
+- `nas_socks5_tunnel_vps_user` / `nas_socks5_tunnel_vps_ssh_port` — SSH-учётка и порт на VPS (`root`, `22`)
+- `nas_socks5_tunnel_local_address` — локальный адрес слушателя (`172.21.0.1` — Docker bridge gateway)
+- `nas_socks5_tunnel_local_port` — локальный порт слушателя (`44135`)
+- `nas_socks5_tunnel_target` — SOCKS5-эндпоинт на VPS, куда форвардит туннель (`127.0.0.1:44135`)
+- `nas_socks5_tunnel_key_path` — путь к SSH-ключу туннеля (`/root/.ssh/id_ed25519_socks5_tunnel`)
+- `nas_socks5_tunnel_unit_name` — имя systemd-юнита (`matrix-socks5-tunnel.service`; на это имя ссылаются мосты в matrix-плейбуке)
+- `nas_socks5_tunnel_legacy_unit_path` — ручной юнит для миграции (`/etc/systemd/system/amnezia-socks5-tunnel.service`; останавливается и удаляется при первом запуске)

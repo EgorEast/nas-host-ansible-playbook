@@ -1,0 +1,30 @@
+#jinja2: lstrip_blocks: True
+# Managed by nas-host ansible role. Правки руками будут перезаписаны.
+[Unit]
+Description=SOCKS5 SSH tunnel (single-connection forward to the SOCKS5 proxy on the VPS)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N \
+		-o ExitOnForwardFailure=yes \
+		-o ServerAliveInterval=30 \
+		-o ServerAliveCountMax=3 \
+		-o StrictHostKeyChecking=accept-new \
+		-i {{ nas_socks5_tunnel_key_path }} \
+		-L {{ nas_socks5_tunnel_local_address }}:{{ nas_socks5_tunnel_local_port }}:{{ nas_socks5_tunnel_target }} \
+{% if nas_socks5_tunnel_vps_ssh_port != 22 %}
+		-p {{ nas_socks5_tunnel_vps_ssh_port }} \
+{% endif %}
+		{{ nas_socks5_tunnel_vps_user }}@{{ nas_socks5_tunnel_vps_host }}
+
+# Туннель — единственное соединение, несущее весь проксируемый трафик,
+# поэтому рестартуем его агрессивно при любой смерти (упавший форвардинг,
+# разрыв, замеченный keepalive'ами выше).
+Restart=always
+RestartSec=10
+SyslogIdentifier=matrix-socks5-tunnel
+
+[Install]
+WantedBy=multi-user.target

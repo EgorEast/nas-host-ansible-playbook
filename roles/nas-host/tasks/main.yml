@@ -132,3 +132,14 @@
   ansible.builtin.include_tasks: ups.yml
   when: nas_ups_manage
   tags: ups
+
+# ─── SOCKS5 tunnel ───────────────────────────────────────────────────
+# Самолечащийся SSH-туннель к SOCKS5-прокси на VPS (потребители — мосты
+# Matrix в mdad). Отдельные задачи в tasks/socks5-tunnel.yml. Без
+# `always` — фича гоняется только на своём теге `socks5-tunnel` и
+# включается через nas_socks5_tunnel_manage в host_vars.
+
+- name: Include SOCKS5 tunnel tasks
+  ansible.builtin.include_tasks: socks5-tunnel.yml
+  when: nas_socks5_tunnel_manage
+  tags: socks5-tunnel

@@ -2,7 +2,7 @@
 default:
     @{{ just_executable() }} --list --justfile {{ justfile() }}
 
-# Applies all host configuration (Docker DNS, sysctl, /etc/hosts, fallback DNS, fail2ban, UPS)
+# Applies all host configuration (Docker DNS, sysctl, /etc/hosts, fallback DNS, fail2ban, UPS, socks5 tunnel)
 install-all *extra_args:
     ansible-playbook -i inventory/hosts playbook.yml {{ extra_args }}
 
@@ -34,3 +34,6 @@ fail2ban *extra_args: (run-tags "fail2ban" extra_args)
 
 # Configures the CyberPower UPS (pwrstatd) — requires PowerPanel installed manually, see README
 ups *extra_args: (run-tags "ups" extra_args)
+
+# Sets up the self-healing SSH tunnel to the SOCKS5 proxy on the VPS (used by the Matrix bridges) — see README
+socks5-tunnel *extra_args: (run-tags "socks5-tunnel" extra_args)
