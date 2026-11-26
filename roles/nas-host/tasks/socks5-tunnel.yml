@@ -61,7 +61,6 @@
   delegate_to: localhost
   become: false
   changed_when: false
-  no_log: true
   tags: socks5-tunnel
 
 # Docker-интеграция ufw (если есть) занимается только портами
